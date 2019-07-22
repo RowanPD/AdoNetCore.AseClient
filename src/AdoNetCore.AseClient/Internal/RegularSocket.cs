@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
@@ -129,6 +129,7 @@ namespace AdoNetCore.AseClient.Internal
                 var result = _parser.Parse(ms, env, out var streamExceeded);
                 if (!streamExceeded)
                     return result;
+                Logger.Instance?.WriteLine($"{nameof(RegularSocket)} - stream exceed - throwing invalid operation exception");
                 throw new InvalidOperationException();
             }
         }
@@ -184,7 +185,10 @@ namespace AdoNetCore.AseClient.Internal
                 if (streamExceeded)
                 {
                     if (_anyMorePartialTokens == false)
+                    {
+                        Logger.Instance?.WriteLine($"{nameof(RegularSocket)} - stream exceed for partial read - throwing invalid operation exception");
                         throw new InvalidOperationException();
+                    }
 
                     // If we didn't read all of the last token then store the token fragment and copy to the start of the MemoryStream to add to it
                     ms.Seek(_parser.LastStartPosition, SeekOrigin.Begin);
