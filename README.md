@@ -1,5 +1,13 @@
 # AdoNetCore.AseClient - a .NET Core DB Provider for SAP ASE
 
+This fork of the DataAction/AdoNetCore.AseClient has the additional non-ADO.Net feature of being able to retrieve results sets before the command on the server has completed. ADO.Net structure requires that the return code (e.g. from a stored procedure call) is available via the Parameters collection immediately after ExecuteReader returns. This means that all results must be retrieved and buffered by the driver before any can be made available. For large result sets this is slow, memory intensive, and (in some cases) lacking in responsiveness. Our main purpose for this divergence is for feedback via result sets during long-running tasks. This also means it has backward-compatibility with older pre-ADO.Net Sybase drivers in this specific regard.
+
+At the request of the Data Action, these features will not be merged back into their parent repository because the new feature is not ADO.Net compliant. I agree with their position on this.
+
+From time to time this fork will be merged from the remote to keep it up to date. This last occurred in January 2019 and, at the time of writing (July 2019), another is under way.
+
+The details below are a copy of what is available from the DataAction repo from the time of the last remote merge.
+
 [![CodeFactor](https://www.codefactor.io/repository/github/dataaction/adonetcore.aseclient/badge)](https://www.codefactor.io/repository/github/dataaction/adonetcore.aseclient)
 [![Join the chat at https://gitter.im/DataAction/AdoNetCore.AseClient](https://badges.gitter.im/DataAction/AdoNetCore.AseClient.svg)](https://gitter.im/DataAction/AdoNetCore.AseClient?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
