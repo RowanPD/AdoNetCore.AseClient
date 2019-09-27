@@ -4,9 +4,9 @@ A .NET Core DB Provider for SAP ASE
 
 This fork of the DataAction/AdoNetCore.AseClient has the additional non-ADO.Net-standard feature of being able to retrieve results sets before the command on the server has completed. ADO.Net structure requires that the return code (e.g. from a stored procedure call) is available via the Parameters collection immediately after ExecuteReader returns. This means that all results must be retrieved and buffered by the driver before they can be made available. For large result sets this is memory intensive and (in some cases) lacking in responsiveness. Our main purpose for this divergence is for feedback via result sets during long-running batch tasks. This also provides backward-compatibility with older pre-ADO.Net Sybase drivers in this specific regard.
 
-Please note that this may also be dependant on packet size. Larger packets may be buffered at the server and only sent when full and so there may be no apparent gain. We have witnessed server buffering for some queries. However, in live system tests of our batch processing system we are sending one row results sets for the number of records processed and are not experiencing server buffering. Hence, we have live feedback of progress.
+Please note that this may also be dependent on packet size. Larger packets may be buffered at the server and only sent when full and so there may be no apparent gain. We have witnessed server buffering for some queries. However, in live system tests of our batch processing system we are sending one row results sets for the number of records processed and are not experiencing server buffering. Hence, we have live feedback of progress.
 
-At the request of Data Action, these features will not be merged back into their upstream repository because the new feature is not ADO.Net compliant. I agree with their position on this.
+At the request of Data Action, this feature will not be merged back into their upstream repository because it is not ADO.Net compliant. I agree with their position on this.
 
 From time to time this fork will be merged from the remote to keep it up to date. This last occurred in September 2019 for upstream verson 0.14.0 (July 2019).
 
