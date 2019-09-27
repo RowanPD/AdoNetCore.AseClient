@@ -1,4 +1,4 @@
-﻿namespace AdoNetCore.AseClient.Interface
+namespace AdoNetCore.AseClient.Interface
 {
     internal interface IConnectionParameters
     {
@@ -22,5 +22,11 @@
         ushort PacketSize { get; }
         int TextSize { get; }
         bool UseAseDecimal { get; }
+        bool EncryptPassword { get; }
+        bool Encryption { get; }
+        string TrustedFile { get; }
+        bool AnsiNull { get; }
+        bool EnableServerPacketSize { get; }
+        bool NamedParameters { get; }
     }
 }

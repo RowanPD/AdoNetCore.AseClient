@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text;
 using NUnit.Framework;
 
@@ -39,6 +38,9 @@ namespace AdoNetCore.AseClient.Tests.Integration.Connection
             }
         }
 
+        #if NET_CORE
+        // Test case is only relevant to .net core, where CP850 isn't provided out of the box.
+        // Framework has implemented it, so case would always fail.
         [Test]
         public void OpenConnection_WithCharsetCp850_NoEncodingProvider_Throws()
         {
@@ -47,5 +49,6 @@ namespace AdoNetCore.AseClient.Tests.Integration.Connection
                 Assert.Throws<AseException>(() => connection.Open());
             }
         }
+        #endif
     }
 }

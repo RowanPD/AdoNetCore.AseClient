@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -48,24 +48,20 @@ namespace AdoNetCore.AseClient.Token
             }
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previousFormatToken, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previousFormatToken)
         {
             var remainingLength = Type == TokenType.TDS_PARAMFMT
-                ? stream.ReadUShort(ref streamExceeded)
-                : stream.ReadUInt(ref streamExceeded);
+                ? stream.ReadUShort()
+                : stream.ReadUInt();
 
-            if (stream.CheckRequiredLength(remainingLength, ref streamExceeded) == false)
-                return;
             using (var ts = new ReadablePartialStream(stream, remainingLength))
             {
-                var paramCount = ts.ReadUShort(ref streamExceeded);
+                var paramCount = ts.ReadUShort();
                 var formats = new List<FormatItem>();
 
                 for (var i = 0; i < paramCount; i++)
                 {
-                    formats.Add(FormatItem.ReadForParameter(ts, env.Encoding, Type, ref streamExceeded));
-                    if (streamExceeded)
-                        return;
+                    formats.Add(FormatItem.ReadForParameter(ts, env.Encoding, Type));
                 }
 
                 Formats = formats.ToArray();

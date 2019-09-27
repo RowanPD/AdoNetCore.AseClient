@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -39,7 +39,7 @@ namespace AdoNetCore.AseClient.Token
                 : DbRpcOptions.TDS_RPC_UNUSED));
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previous)
         {
             throw new NotImplementedException();
         }

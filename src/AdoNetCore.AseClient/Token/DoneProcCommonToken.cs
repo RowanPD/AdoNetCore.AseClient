@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -47,11 +47,11 @@ namespace AdoNetCore.AseClient.Token
             throw new NotImplementedException();
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previous)
         {
-            Status = (DoneProcStatus)stream.ReadUShort(ref streamExceeded);
-            TransactionState = (TranState)stream.ReadUShort(ref streamExceeded);
-            Count = stream.ReadInt(ref streamExceeded);
+            Status = (DoneProcStatus)stream.ReadUShort();
+            TransactionState = (TranState)stream.ReadUShort();
+            Count = stream.ReadInt();
             Logger.Instance?.WriteLine($"<- {Status}, {TransactionState}, {Count}");
         }
     }

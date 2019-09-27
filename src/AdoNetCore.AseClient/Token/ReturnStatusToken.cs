@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
 using AdoNetCore.AseClient.Internal;
@@ -17,16 +17,16 @@ namespace AdoNetCore.AseClient.Token
             stream.WriteInt(Status);
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previous)
         {
-            Status = stream.ReadInt(ref streamExceeded);
+            Status = stream.ReadInt();
             Logger.Instance?.WriteLine($"<- {Type}: {Status}");
         }
 
-        public static ReturnStatusToken Create(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public static ReturnStatusToken Create(Stream stream, DbEnvironment env, IFormatToken previous)
         {
             var t = new ReturnStatusToken();
-            t.Read(stream, env, previous, ref streamExceeded);
+            t.Read(stream, env, previous);
             return t;
         }
     }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Text;
 using System.Data.Common;
+using System.Linq;
 using AdoNetCore.AseClient.Internal;
 
 namespace AdoNetCore.AseClient
@@ -18,15 +19,21 @@ namespace AdoNetCore.AseClient
 #if ENABLE_SYSTEM_DATA_COMMON_EXTENSIONS
         private readonly AseCommand _command;
         private DataTable _currentSchemaTable;
+
+        internal AseDataReader(IEnumerable<TableResult> results, AseCommand command, CommandBehavior behavior)
+        {
+            _results = results.ToArray();
+            _command = command;
+
+            _behavior = behavior;
+            NextResult();
+        }
 #endif
 
-        // ReSharper disable once UnusedParameter.Local
-        internal AseDataReader(IList<TableResult> results, AseCommand command, CommandBehavior behavior)
+        internal AseDataReader(IEnumerable<TableResult> results, CommandBehavior behavior)
         {
-            _results = results;
-#if ENABLE_SYSTEM_DATA_COMMON_EXTENSIONS
-            _command = command;
-#endif
+            _results = results.ToArray();
+
             _behavior = behavior;
             NextResult();
         }
@@ -94,11 +101,6 @@ namespace AdoNetCore.AseClient
                 }
 
                 byteArray = Encoding.Unicode.GetBytes((string)obj);
-
-                if (byteArray == null)
-                {
-                    return 0;
-                }
                 byteArrayLength = byteArray.Length;
             }
 
@@ -150,7 +152,7 @@ namespace AdoNetCore.AseClient
             return convertible.ToChar(System.Globalization.CultureInfo.InvariantCulture.NumberFormat);
         }
 
-        public override long GetChars(int i, long fieldOffset, char[] buffer, int bufferoffset, int length)
+        public override long GetChars(int i, long fieldOffset, char[] buffer, int bufferOffset, int length)
         {
             if (IsDBNull(i))
             {
@@ -198,7 +200,7 @@ namespace AdoNetCore.AseClient
 
 #if NETCOREAPP1_0 || NETCOREAPP1_1
             var cIndex = fieldOffset;
-            var bIndex = (long)bufferoffset;
+            var bIndex = (long)bufferOffset;
 
             for (long index3 = 0; index3 < charsToRead; ++index3)
             {
@@ -207,7 +209,7 @@ namespace AdoNetCore.AseClient
                 ++cIndex;
             }
 #else
-            Array.Copy(charArray, fieldOffset, buffer, bufferoffset, charsToRead);
+            Array.Copy(charArray, fieldOffset, buffer, bufferOffset, charsToRead);
 #endif
             return charsToRead;
         }
@@ -532,7 +534,7 @@ namespace AdoNetCore.AseClient
         private object GetNonNullValue(int i)
         {
             var obj = GetValue(i);
-            
+
             if (obj == DBNull.Value || obj == null)
             {
                 throw new AseException("Value in column is null", 30014);
@@ -663,7 +665,7 @@ namespace AdoNetCore.AseClient
         /// <returns>true if the reader is pointing at a row of data; false otherwise.</returns>
         public override bool Read()
         {
-            if (_currentResult < 0)
+            if (_currentResult < 0 || _currentResult >= _results.Count)
             {
                 return false;
             }

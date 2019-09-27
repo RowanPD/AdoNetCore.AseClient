@@ -56,6 +56,12 @@ namespace AdoNetCore.AseClient.Internal
             {"Packet Size", ParsePacketSize},
             {"TextSize", ParseTextSize},
             {"UseAseDecimal", ParseUseAseDecimal},
+            {"EncryptPassword", ParseEncryptPassword},
+            {"Encryption", ParseEncryption},
+            {"TrustedFile", ParseTrustedFile},
+            {"AnsiNull", ParseAnsiNull},
+            {"EnableServerPacketSize", ParseEnableServerPacketSize},
+            {"NamedParameters", ParseNamedParameters},
         };
 
         public static ConnectionParameters Parse(string connectionString)
@@ -150,6 +156,16 @@ namespace AdoNetCore.AseClient.Internal
         private static void ParsePort(ConnectionStringItem item, ConnectionParameters result)
         {
             result.Port = Convert.ToInt32(item.PropertyValue);
+        }
+
+        private static void ParseEncryption(ConnectionStringItem item, ConnectionParameters result)
+        {
+            result.Encryption = string.Equals(item.PropertyValue?.Trim(), "ssl", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ParseTrustedFile(ConnectionStringItem item, ConnectionParameters result)
+        {
+            result.TrustedFile = item.PropertyValue;
         }
 
         private static void ParseDatabase(ConnectionStringItem item, ConnectionParameters result)
@@ -248,6 +264,51 @@ namespace AdoNetCore.AseClient.Internal
             }
         }
 
+        private static void ParseEncryptPassword(ConnectionStringItem item, ConnectionParameters result)
+        {
+            if (bool.TryParse(item.PropertyValue, out var parsedBool))
+            {
+                result.EncryptPassword = parsedBool;
+            }
+            else if (int.TryParse(item.PropertyValue, out var parsedInt))
+            {
+                result.EncryptPassword = parsedInt != 0;
+            }
+            else
+            {
+                result.EncryptPassword = Convert.ToBoolean(item.PropertyValue);
+            }
+        }
+
+        private static void ParseAnsiNull(ConnectionStringItem item, ConnectionParameters result)
+        {
+            result.AnsiNull = Convert.ToInt32(item.PropertyValue) == 1;
+        }
+
+        private static void ParseEnableServerPacketSize(ConnectionStringItem item, ConnectionParameters result)
+        {
+            if (int.TryParse(item.PropertyValue?.Trim(), out var intValue))
+            {
+                result.EnableServerPacketSize = intValue != 0;
+            }
+            else if (bool.TryParse(item.PropertyValue?.Trim(), out var boolValue))
+            {
+                result.EnableServerPacketSize = boolValue;
+            }
+        }
+
+        private static void ParseNamedParameters(ConnectionStringItem item, ConnectionParameters result)
+        {
+            if (int.TryParse(item.PropertyValue?.Trim(), out var intValue))
+            {
+                result.NamedParameters = intValue != 0;
+            }
+            else if (bool.TryParse(item.PropertyValue?.Trim(), out var boolValue))
+            {
+                result.NamedParameters = boolValue;
+            }
+        }
+
         // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
         private static void ValidateConnectionParameters(ConnectionParameters result)
         {
@@ -322,5 +383,13 @@ namespace AdoNetCore.AseClient.Internal
         public ushort PacketSize { get; private set; } = 512;
         public int TextSize { get; private set; } = 32768;
         public bool UseAseDecimal { get; private set; }
+
+        public bool EncryptPassword { get; private set; }
+        public bool Encryption { get; private set; }
+        public string TrustedFile { get; private set; }
+        public bool AnsiNull { get; private set; }
+        public bool EnableServerPacketSize { get; private set; } = true;
+
+        public bool NamedParameters { get; private set; } = true;
     }
 }

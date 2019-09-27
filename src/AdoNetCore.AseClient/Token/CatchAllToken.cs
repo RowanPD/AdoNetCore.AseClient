@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -8,11 +7,12 @@ namespace AdoNetCore.AseClient.Token
 {
     internal class CatchAllToken : IToken
     {
-        public TokenType Type { get; private set; }
+        public TokenType Type => (TokenType) _type;
+        private readonly byte _type;
 
-        public CatchAllToken(TokenType type)
+        public CatchAllToken(byte type)
         {
-            Type = type;
+            _type = type;
         }
 
         public void Write(Stream stream, DbEnvironment env)
@@ -20,98 +20,104 @@ namespace AdoNetCore.AseClient.Token
             // do nothing
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previous)
         {
-            //var remainingLength = stream.ReadShort();
-            var remainingLength = CalculateRemainingLength(Type, stream, ref streamExceeded);
-            if (stream.CheckRequiredLength((long)remainingLength, ref streamExceeded) == false)
-                return;
-
-            if (remainingLength < long.MaxValue)
-                stream.Seek((long)remainingLength, SeekOrigin.Current);
-            else
-                for (ulong i = 0; i < remainingLength; i++)
-                {
-                    stream.ReadByte();
-                }
+            var remainingLength = CalculateRemainingLength(stream);
+            for (uint i = 0; i < remainingLength; i++)
+            {
+                stream.ReadByte();
+            }
         }
 
         /// <summary>
         /// The token's length or the length of its remaining length indicator is encoded in the token's type.
         /// </summary>
         /// <param name="stream"></param>
-        /// <param name="type"></param>
         /// <returns></returns>
-        private ulong CalculateRemainingLength(TokenType type, Stream stream, ref bool streamExceeded)
+        private uint CalculateRemainingLength(Stream stream)
         {
-            var b = (byte)type;
-
-            if ((b & 0b0011_0000) == 0b0011_0000)
+            // 5.2.2 Fixed Length - xx11xxxx
+            // xx1111xx - 8 bytes
+            if ((_type & 0b0011_1100) == 0b0011_1100)
             {
-                return Convert.ToUInt64(stream.ReadByte(ref streamExceeded));
+                return 8;
             }
 
-            if ((b & 0b0011_0100) == 0b0011_0100)
-            {
-                return stream.ReadUShort(ref streamExceeded);
-            }
-
-            if ((b & 0b0011_1000) == 0b0011_1000)
-            {
-                return stream.ReadUInt(ref streamExceeded);
-            }
-
-            if ((b & 0b0011_1100) == 0b0011_1100)
-            {
-                return stream.ReadULong(ref streamExceeded);
-            }
-
-            if ((b & 0b1010_0000) == 0b1010_0000)
-            {
-                return 2;
-            }
-
-            if ((b & 0b1110_0000) == 0b1110_0000)
-            {
-                return 2;
-            }
-
-            if ((b & 0b1000_0000) == 0b1000_0000)
-            {
-                return 2;
-            }
-
-            if ((b & 0b0010_0000) == 0b0010_0000)
+            // xx1110xx - 4 bytes
+            if ((_type & 0b0011_1000) == 0b0011_1000)
             {
                 return 4;
             }
 
-            if ((b & 0b0110_0000) == 0b0110_0000)
+            // xx1101xx - 2 bytes
+            if ((_type & 0b0011_0100) == 0b0011_0100)
             {
-                return 4;
+                return 2;
             }
 
-            if ((b & 0b0010_0100) == 0b0010_0100)
-            {
-                return 1;
-            }
-
-            if ((b & 0b0010_1000) == 0b0010_1000)
+            // xx1100xx - 1 byte
+            if ((_type & 0b0011_0000) == 0b0011_0000)
             {
                 return 1;
             }
 
-            if ((b & 0b0110_0100) == 0b0110_0100)
+            // 5.2.3 Variable Length - any other pattern
+            // 1010xxxx - ushort
+            if ((_type & 0b1010_0000) == 0b1010_0000)
             {
-                return 1;
+                return stream.ReadUShort();
             }
 
-            if ((b & 0b0110_1000) == 0b0110_1000)
+            // 1110xxxx - ushort
+            if ((_type & 0b1110_0000) == 0b1110_0000)
             {
-                return 1;
+                return stream.ReadUShort();
             }
 
-            return 0; //0b1100_0000
+            // 1000xxxx - ushort
+            if ((_type & 0b1000_0000) == 0b1000_0000)
+            {
+                return stream.ReadUShort();
+            }
+
+            // 001000xx - uint
+            if ((_type & 0b0010_0000) == 0b0010_0000)
+            {
+                return stream.ReadUInt();
+            }
+
+            // 011000xx - uint
+            if ((_type & 0b0110_0000) == 0b0110_0000)
+            {
+                return stream.ReadUInt();
+            }
+
+            // 001001xx - byte
+            if ((_type & 0b0010_0100) == 0b0010_0100)
+            {
+                return (uint) stream.ReadByte();
+            }
+
+            // 001010xx - byte
+            if ((_type & 0b0010_1000) == 0b0010_1000)
+            {
+                return (uint) stream.ReadByte();
+            }
+
+            // 011001xx - byte
+            if ((_type & 0b0110_0100) == 0b0110_0100)
+            {
+                return (uint) stream.ReadByte();
+            }
+
+            // 011010xx - byte
+            if ((_type & 0b0110_1000) == 0b0110_1000)
+            {
+                return (uint) stream.ReadByte();
+            }
+
+            // 5.2.1 Zero Length - 110xxxxx
+            return 0;
         }
     }
 }

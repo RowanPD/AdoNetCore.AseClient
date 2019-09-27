@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -32,23 +32,21 @@ namespace AdoNetCore.AseClient.Token
             stream.WriteBytePrefixedByteArray(Arguments);
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previousFormatToken, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previousFormatToken)
         {
-            var remainingLength = stream.ReadShort(ref streamExceeded);
-            if (stream.CheckRequiredLength(remainingLength, ref streamExceeded) == false)
-                return;
+            var remainingLength = stream.ReadShort();
             using (var ts = new ReadablePartialStream(stream, remainingLength))
             {
                 Command = (CommandType)ts.ReadByte();
                 Option = (OptionType)ts.ReadByte();
-                Arguments = ts.ReadByteLengthPrefixedByteArray(ref streamExceeded);
+                Arguments = ts.ReadByteLengthPrefixedByteArray();
             }
         }
 
-        public static OptionCommandToken Create(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public static OptionCommandToken Create(Stream stream, DbEnvironment env, IFormatToken previous)
         {
             var t = new OptionCommandToken();
-            t.Read(stream, env, previous, ref streamExceeded);
+            t.Read(stream, env, previous);
             return t;
         }
 
@@ -59,6 +57,16 @@ namespace AdoNetCore.AseClient.Token
                 Arguments = BitConverter.GetBytes(textSize),
                 Command = CommandType.TDS_OPT_SET,
                 Option = OptionType.TDS_OPT_TEXTSIZE
+            };
+        }
+
+        public static OptionCommandToken CreateSetAnsiNull(bool enabled)
+        {
+            return new OptionCommandToken
+            {
+                Arguments = new []{ enabled ? (byte)1 : (byte)0 },
+                Command = CommandType.TDS_OPT_SET,
+                Option = OptionType.TDS_OPT_ANSINULL
             };
         }
 

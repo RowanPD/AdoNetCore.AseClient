@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -41,11 +41,9 @@ namespace AdoNetCore.AseClient.Token
             throw new NotImplementedException();
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previous)
         {
-            var remainingLength = stream.ReadUShort(ref streamExceeded);
-            if (stream.CheckRequiredLength(remainingLength, ref streamExceeded) == false)
-                return;
+            var remainingLength = stream.ReadUShort();
             using (var ts = new ReadablePartialStream(stream, remainingLength))
             {
                 Status = (LoginStatus)ts.ReadByte();
@@ -53,7 +51,7 @@ namespace AdoNetCore.AseClient.Token
                 ts.Read(versionBuffer, 0, 4);
                 TdsVersion = $"{versionBuffer[0]}.{versionBuffer[1]}.{versionBuffer[2]}.{versionBuffer[3]}";
 
-                ProgramName = ts.ReadByteLengthPrefixedString(env.Encoding, ref streamExceeded);
+                ProgramName = ts.ReadByteLengthPrefixedString(env.Encoding);
 
                 ts.Read(versionBuffer, 0, 4);
                 ProgramVersion = $"{versionBuffer[0]}.{versionBuffer[1]}.{versionBuffer[2]}"; //Sybase driver only reports the first 3 version numbers, eg: 15.0.0
@@ -61,10 +59,10 @@ namespace AdoNetCore.AseClient.Token
             Logger.Instance?.WriteLine($"<- {Type}: TDS {TdsVersion}, {ProgramName} {ProgramVersion}");
         }
 
-        public static LoginAckToken Create(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public static LoginAckToken Create(Stream stream, DbEnvironment env, IFormatToken previous)
         {
             var t = new LoginAckToken();
-            t.Read(stream, env, previous, ref streamExceeded);
+            t.Read(stream, env, previous);
             return t;
         }
     }

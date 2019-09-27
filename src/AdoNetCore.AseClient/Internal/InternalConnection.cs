@@ -4,7 +4,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
+using System.IO;
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -17,17 +20,27 @@ namespace AdoNetCore.AseClient.Internal
     internal class InternalConnection : IInternalConnection
     {
         private readonly IConnectionParameters _parameters;
-        private readonly ISocket _socket;
-        private readonly DbEnvironment _environment = new DbEnvironment();
+        private readonly Stream _networkStream;
+        private readonly ITokenReader _reader;
+        private readonly DbEnvironment _environment;
+        private readonly object _sendMutex;
         private bool _statisticsEnabled;
 
+#if ENABLE_ARRAY_POOL
+        /// <summary>
+        /// The <see cref="System.Buffers.ArrayPool{T}"/> to use for efficient buffer allocation.
+        /// </summary>
+        private readonly System.Buffers.ArrayPool<byte> _arrayPool;
+#endif
         private enum InternalConnectionState
         {
+            // ReSharper disable InconsistentNaming
             None,
             Ready,
             Active,
             Canceled,
             Broken
+            // ReSharper restore InconsistentNaming
         }
 
         private InternalConnectionState _state = InternalConnectionState.None;
@@ -65,12 +78,22 @@ namespace AdoNetCore.AseClient.Internal
             }
         }
 
-        public InternalConnection(IConnectionParameters parameters, ISocket socket)
+#if ENABLE_ARRAY_POOL
+        public InternalConnection(IConnectionParameters parameters, Stream networkStream, ITokenReader reader, DbEnvironment environment, System.Buffers.ArrayPool<byte> arrayPool)
+#else
+        public InternalConnection(IConnectionParameters parameters, Stream networkStream, ITokenReader reader, DbEnvironment environment)
+#endif
         {
             _parameters = parameters;
-            _socket = socket;
+            _networkStream = networkStream;
+            _reader = reader;
+            _environment = environment;
             _environment.PacketSize = parameters.PacketSize; //server might decide to change the packet size later anyway
             _environment.UseAseDecimal = parameters.UseAseDecimal;
+            _sendMutex = new object();
+#if ENABLE_ARRAY_POOL
+            _arrayPool = arrayPool;
+#endif
         }
 
         private void SendPacket(IPacket packet)
@@ -79,12 +102,31 @@ namespace AdoNetCore.AseClient.Internal
             Logger.Instance?.WriteLine("----------  Send packet   ----------");
             try
             {
-                _socket.SendPacket(packet, _environment);
+                lock (_sendMutex)
+                {
+#if ENABLE_ARRAY_POOL
+                    using (var tokenStream = new TokenSendStream(_networkStream, _environment, _arrayPool))
+#else
+                    using (var tokenStream = new TokenSendStream(_networkStream, _environment))
+#endif
+                    {
+                        // ReSharper disable once InconsistentlySynchronizedField
+                        tokenStream.SetBufferType(packet.Type, packet.Status);
+
+                        packet.Write(tokenStream, _environment);
+
+                        tokenStream.Flush();
+                    }
+                }
             }
             catch
             {
                 IsDoomed = true;
                 throw;
+            }
+            finally
+            {
+                LastActive = DateTime.UtcNow;
             }
         }
 
@@ -92,43 +134,73 @@ namespace AdoNetCore.AseClient.Internal
         {
             Logger.Instance?.WriteLine();
             Logger.Instance?.WriteLine("---------- Receive Tokens ----------");
-            foreach (var receivedToken in _socket.ReceiveTokens(_environment))
+            try
             {
-                foreach (var handler in handlers)
+#if ENABLE_ARRAY_POOL
+                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment, _arrayPool))
+#else
+                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment))
+#endif
                 {
-                    if (handler != null && handler.CanHandle(receivedToken.Type))
+                    foreach (var receivedToken in _reader.Read(tokenStream, _environment))
                     {
-                        handler.Handle(receivedToken);
-                    }
-                }
-            }
-        }
-
-        private void ReceivePartialTokens(params ITokenHandler[] handlers)
-        {
-            Logger.Instance?.WriteLine();
-            Logger.Instance?.WriteLine("---------- Receive Partial Tokens ----------");
-            IEnumerable<IToken> tokens;
-            while ((tokens = _socket.ReceivePartialTokens(_environment)) != null)
-            {
-                foreach (var receivedToken in tokens)
-                {
-                    foreach (var handler in handlers)
-                    {
-                        if (handler != null && handler.CanHandle(receivedToken.Type))
+                        foreach (var handler in handlers)
                         {
-                            handler.Handle(receivedToken);
+                            if (handler != null && handler.CanHandle(receivedToken.Type))
+                            {
+                                handler.Handle(receivedToken);
+                            }
                         }
                     }
                 }
             }
+            finally
+            {
+                LastActive = DateTime.UtcNow;
+            }
         }
+
+//        private void ReceivePartialTokens(params ITokenHandler[] handlers)
+//        {
+//            Logger.Instance?.WriteLine();
+//            Logger.Instance?.WriteLine("---------- Receive Partial Tokens ----------");
+//            try
+//            {
+//#if ENABLE_ARRAY_POOL
+//                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment, _arrayPool))
+//#else
+//                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment))
+//#endif
+//                {
+//                    IEnumerable<IToken> tokens;
+//                    while ((tokens = _reader.ReadPartialTokens(tokenStream, _environment)) !=
+//                           null)
+//                    {
+//                        foreach (var receivedToken in tokens)
+//                        {
+//                            foreach (var handler in handlers)
+//                            {
+//                                if (handler != null && handler.CanHandle(receivedToken.Type))
+//                                {
+//                                    handler.Handle(receivedToken);
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//            finally
+//            {
+//                LastActive = DateTime.UtcNow;
+//            }
+//        }
 
         public void Login()
         {
             //socket is established already
             //login
-            SendPacket(new LoginPacket(
+            SendPacket(
+                new LoginPacket(
                     _parameters.ClientHostName,
                     _parameters.Username,
                     _parameters.Password,
@@ -139,14 +211,16 @@ namespace AdoNetCore.AseClient.Internal
                     _parameters.Charset,
                     "ADO.NET",
                     _environment.PacketSize,
-                    new CapabilityToken()));
+                    new ClientCapabilityToken(_parameters.EnableServerPacketSize),
+                    _parameters.EncryptPassword));
 
             var ackHandler = new LoginTokenHandler();
+            var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
             var messageHandler = new MessageTokenHandler(EventNotifier);
 
             ReceiveTokens(
                 ackHandler,
-                new EnvChangeTokenHandler(_environment),
+                envChangeTokenHandler,
                 messageHandler);
 
             messageHandler.AssertNoErrors();
@@ -157,7 +231,11 @@ namespace AdoNetCore.AseClient.Internal
                 throw new InvalidOperationException("No login ack found");
             }
 
-            if (ackHandler.LoginStatus != LoginAckToken.LoginStatus.TDS_LOG_SUCCEED)
+            if (ackHandler.LoginStatus == LoginAckToken.LoginStatus.TDS_LOG_NEGOTIATE)
+            {
+                NegotiatePassword(ackHandler.Message.MessageId, ackHandler.Parameters.Parameters, _parameters.Password);
+            }
+            else if (ackHandler.LoginStatus != LoginAckToken.LoginStatus.TDS_LOG_SUCCEED)
             {
                 throw new AseException("Login failed.\n", 4002); //just in case the server doesn't respond with an appropriate EED token
             }
@@ -168,8 +246,52 @@ namespace AdoNetCore.AseClient.Internal
             SetState(InternalConnectionState.Ready);
         }
 
+        private void NegotiatePassword(MessageToken.MsgId scheme, ParametersToken.Parameter[] parameters, string password)
+        {
+            try
+            {
+                switch (scheme)
+                {
+                    case MessageToken.MsgId.TDS_MSG_SEC_ENCRYPT3:
+                        DoEncrypt3Scheme(parameters, password);
+                        break;
+                    default:
+                        throw new NotSupportedException("Server requested unsupported password encryption scheme");
+                }
+            }
+            catch (CryptographicException ex)
+            {
+                //todo: expand on exception cases
+                Logger.Instance?.WriteLine($"{nameof(CryptographicException)} - {ex}");
+                throw new AseException("Password encryption failed");
+            }
+        }
+
+        private void DoEncrypt3Scheme(ParametersToken.Parameter[] parameters, string password)
+        {
+            var encryptedPassword = Encryption.EncryptPassword3((int) parameters[0].Value, (byte[]) parameters[1].Value, (byte[]) parameters[2].Value, Encoding.ASCII.GetBytes(password));
+            SendPacket(new NormalPacket(Encryption.BuildEncrypt3Tokens(encryptedPassword)));
+
+            // 5. Expect an ack
+            var ackHandler = new LoginTokenHandler();
+            var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
+            var messageHandler = new MessageTokenHandler(EventNotifier);
+
+            ReceiveTokens(
+                ackHandler,
+                envChangeTokenHandler,
+                messageHandler);
+
+            messageHandler.AssertNoErrors();
+
+            if (ackHandler.LoginStatus != LoginAckToken.LoginStatus.TDS_LOG_SUCCEED)
+            {
+                throw new AseException("Login failed.\n", 4002); //just in case the server doesn't respond with an appropriate EED token
+            }
+        }
+
         public DateTime Created { get; private set; }
-        public DateTime LastActive => _socket.LastActive;
+        public DateTime LastActive { get; private set; }
 
         public bool Ping()
         {
@@ -212,9 +334,10 @@ namespace AdoNetCore.AseClient.Internal
             }));
 
             var messageHandler = new MessageTokenHandler(EventNotifier);
+            var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
 
             ReceiveTokens(
-                new EnvChangeTokenHandler(_environment),
+                envChangeTokenHandler,
                 messageHandler);
 
             AssertExecutionCompletion();
@@ -226,7 +349,8 @@ namespace AdoNetCore.AseClient.Internal
         public string DataSource => $"{_parameters.Server},{_parameters.Port}";
         public string ServerVersion { get; private set; }
 
-        private void InternalExecuteAsync(AseCommand command, AseTransaction transaction, TaskCompletionSource<int> rowsAffectedSource = null, TaskCompletionSource<DbDataReader> readerSource = null, ReaderSourceType readerSourceType = ReaderSourceType.Standard, CommandBehavior behavior = CommandBehavior.Default)
+        private void InternalExecuteQueryAsync(AseCommand command, AseTransaction transaction, TaskCompletionSource<DbDataReader> readerSource, CommandBehavior behavior,
+            ReaderSourceType readerSourceType = ReaderSourceType.Standard)
         {
             AssertExecutionStart();
 
@@ -234,27 +358,81 @@ namespace AdoNetCore.AseClient.Internal
             {
                 SendPacket(new NormalPacket(BuildCommandTokens(command, behavior)));
 
+                var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
                 var doneHandler = new DoneTokenHandler();
                 var messageHandler = new MessageTokenHandler(EventNotifier);
+                //var dataReaderHandler = new DataReaderTokenHandler();
+                var responseParameterTokenHandler = new ResponseParameterTokenHandler(command.AseParameters);
 
                 // Only one of these two variables will not be null
                 var dataReaderHandler = readerSource != null && readerSourceType == ReaderSourceType.Standard ? new DataReaderTokenHandler() : null;
-                var dataReaderEventHandler = readerSource != null && readerSourceType == ReaderSourceType.ForCallback ? new DataReaderCallbackTokenHandler(command, behavior, EventNotifier) : null;
+                var dataReaderEventHandler = readerSource != null && readerSourceType == ReaderSourceType.ForCallback ? new DataReaderCallbackTokenHandler(CommandBehavior.Default, EventNotifier) : null;
 
                 if (dataReaderEventHandler != null)
-                    ReceivePartialTokens(
-                        new EnvChangeTokenHandler(_environment),
+                    ReceiveTokens(
+                        envChangeTokenHandler,
+                        doneHandler,
                         messageHandler,
                         dataReaderEventHandler,
-                        new ResponseParameterTokenHandler(command.AseParameters),
-                        doneHandler);
+                        responseParameterTokenHandler);
                 else
                     ReceiveTokens(
-                        new EnvChangeTokenHandler(_environment),
+                        envChangeTokenHandler,
+                        doneHandler,
                         messageHandler,
                         dataReaderHandler,
-                        new ResponseParameterTokenHandler(command.AseParameters),
-                        doneHandler);
+                        responseParameterTokenHandler);
+                
+                AssertExecutionCompletion(doneHandler);
+
+                if (transaction != null && doneHandler.TransactionState == TranState.TDS_TRAN_ABORT)
+                {
+                    transaction.MarkAborted();
+                }
+
+                messageHandler.AssertNoErrors();
+
+                if (doneHandler.Canceled)
+                {
+                    readerSource?.TrySetCanceled(); // If we have already begun returning data, then this will get lost.
+                }
+                else
+                {
+                    if (dataReaderHandler != null)
+#if ENABLE_SYSTEM_DATA_COMMON_EXTENSIONS
+                        readerSource?.TrySetResult(new AseDataReader(dataReaderHandler.Results(), command, behavior));
+#else
+                        readerSource?.TrySetResult(new AseDataReader(dataReaderHandler.Results(), behavior));
+#endif
+                    else if (dataReaderEventHandler != null)
+                        // Set this so that Task.Wait will stop waiting
+                        readerSource?.SetResult(null);
+                }
+            }
+            catch (Exception ex)
+            {
+                readerSource.TrySetException(ex); // If we have already begun returning data, then this will get lost.
+            }
+        }
+
+        private void InternalExecuteNonQueryAsync(AseCommand command, AseTransaction transaction, TaskCompletionSource<int> rowsAffectedSource)
+        {
+            AssertExecutionStart();
+
+            try
+            {
+                SendPacket(new NormalPacket(BuildCommandTokens(command, CommandBehavior.Default)));
+
+                var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
+                var messageHandler = new MessageTokenHandler(EventNotifier);
+                var responseParameterTokenHandler = new ResponseParameterTokenHandler(command.AseParameters);
+                var doneHandler = new DoneTokenHandler();
+
+                ReceiveTokens(
+                    envChangeTokenHandler,
+                    messageHandler,
+                    responseParameterTokenHandler,
+                    doneHandler);
 
                 AssertExecutionCompletion(doneHandler);
 
@@ -267,23 +445,16 @@ namespace AdoNetCore.AseClient.Internal
 
                 if (doneHandler.Canceled)
                 {
-                    rowsAffectedSource?.SetCanceled();
-                    readerSource?.SetCanceled();
+                    rowsAffectedSource.TrySetCanceled();
                 }
                 else
                 {
-                    rowsAffectedSource?.SetResult(doneHandler.RowsAffected);
-                    if (dataReaderHandler != null)
-                        readerSource?.SetResult(new AseDataReader(dataReaderHandler.Results(), command, behavior));
-                    else if (dataReaderEventHandler != null)
-                        // Set this so that Task.Wait will stop waiting
-                        readerSource?.SetResult(null);
+                    rowsAffectedSource.TrySetResult(doneHandler.RowsAffected);
                 }
             }
             catch (Exception ex)
             {
-                rowsAffectedSource?.SetException(ex);
-                readerSource?.SetException(ex);
+                rowsAffectedSource.TrySetException(ex);
             }
         }
 
@@ -297,7 +468,7 @@ namespace AdoNetCore.AseClient.Internal
             }
             catch (AggregateException ae)
             {
-                ExceptionDispatchInfo.Capture(ae.InnerException).Throw();
+                ExceptionDispatchInfo.Capture(ae.InnerException ?? ae).Throw();
                 throw;
             }
         }
@@ -305,7 +476,7 @@ namespace AdoNetCore.AseClient.Internal
         public Task<int> ExecuteNonQueryTaskRunnable(AseCommand command, AseTransaction transaction)
         {
             var rowsAffectedSource = new TaskCompletionSource<int>();
-            InternalExecuteAsync(command, transaction, rowsAffectedSource);
+            InternalExecuteNonQueryAsync(command, transaction, rowsAffectedSource);
             return rowsAffectedSource.Task;
         }
 
@@ -319,7 +490,7 @@ namespace AdoNetCore.AseClient.Internal
             }
             catch (AggregateException ae)
             {
-                ExceptionDispatchInfo.Capture(ae.InnerException).Throw();
+                ExceptionDispatchInfo.Capture(ae.InnerException ?? ae).Throw();
                 throw;
             }
         }
@@ -331,12 +502,12 @@ namespace AdoNetCore.AseClient.Internal
                 EventNotifier.ResultRow = resultRowHandler;
                 EventNotifier.ResultSet = resultSetHandler;
                 var readerSource = new TaskCompletionSource<DbDataReader>();
-                InternalExecuteAsync(command, transaction, null, readerSource, ReaderSourceType.ForCallback, behavior);
+                InternalExecuteQueryAsync(command, transaction, readerSource, behavior, ReaderSourceType.ForCallback);
                 readerSource.Task.Wait();
             }
             catch (AggregateException ae)
             {
-                ExceptionDispatchInfo.Capture(ae.InnerException).Throw();
+                ExceptionDispatchInfo.Capture(ae.InnerException ?? ae).Throw();
                 throw;
             }
             catch (Exception ex)
@@ -353,7 +524,7 @@ namespace AdoNetCore.AseClient.Internal
         public Task<DbDataReader> ExecuteReaderTaskRunnable(CommandBehavior behavior, AseCommand command, AseTransaction transaction)
         {
             var readerSource = new TaskCompletionSource<DbDataReader>();
-            InternalExecuteAsync(command, transaction, null, readerSource, ReaderSourceType.Standard, behavior);
+            InternalExecuteQueryAsync(command, transaction, readerSource, behavior);
             return readerSource.Task;
         }
 
@@ -410,23 +581,6 @@ namespace AdoNetCore.AseClient.Internal
             TrySetState(InternalConnectionState.Ready, s => s == InternalConnectionState.Active);
         }
 
-        public void GetTextSize()
-        {
-            SendPacket(new NormalPacket(OptionCommandToken.CreateGet(OptionCommandToken.OptionType.TDS_OPT_TEXTSIZE)));
-
-            var doneHandler = new DoneTokenHandler();
-            var messageHandler = new MessageTokenHandler();
-            var dataReaderHandler = new DataReaderTokenHandler();
-
-            ReceiveTokens(
-                new EnvChangeTokenHandler(_environment),
-                messageHandler,
-                dataReaderHandler,
-                doneHandler);
-
-            messageHandler.AssertNoErrors();
-        }
-
         public void SetTextSize(int textSize)
         {
             //todo: may need to remove this, user scripts could change the textsize value
@@ -437,12 +591,13 @@ namespace AdoNetCore.AseClient.Internal
 
             SendPacket(new NormalPacket(OptionCommandToken.CreateSetTextSize(textSize)));
 
-            var doneHandler = new DoneTokenHandler();
+            var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
             var messageHandler = new MessageTokenHandler(EventNotifier);
             var dataReaderHandler = new DataReaderTokenHandler();
+            var doneHandler = new DoneTokenHandler();
 
             ReceiveTokens(
-                new EnvChangeTokenHandler(_environment),
+                envChangeTokenHandler,
                 messageHandler,
                 dataReaderHandler,
                 doneHandler);
@@ -450,6 +605,28 @@ namespace AdoNetCore.AseClient.Internal
             messageHandler.AssertNoErrors();
 
             _environment.TextSize = textSize;
+        }
+
+        public void SetAnsiNull(bool enabled)
+        {
+            SendPacket(new NormalPacket(OptionCommandToken.CreateSetAnsiNull(enabled)));
+
+            var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
+            var messageHandler = new MessageTokenHandler(EventNotifier);
+            var doneHandler = new DoneTokenHandler();
+
+            ReceiveTokens(
+                envChangeTokenHandler,
+                messageHandler,
+                doneHandler);
+
+            messageHandler.AssertNoErrors();
+        }
+
+        public bool NamedParameters
+        {
+            get;
+            set;
         }
 
         private bool _isDoomed;
@@ -479,7 +656,7 @@ namespace AdoNetCore.AseClient.Internal
                 ? BuildRpcToken(command, behavior)
                 : BuildLanguageToken(command, behavior);
 
-            foreach (var token in BuildParameterTokens(command.AseParameters, command.NamedParameters))
+            foreach (var token in BuildParameterTokens(command.AseParameters))
             {
                 yield return token;
             }
@@ -489,7 +666,7 @@ namespace AdoNetCore.AseClient.Internal
         {
             return new LanguageToken
             {
-                CommandText = MakeCommand(command.CommandText, behavior),
+                CommandText = MakeCommand(command.CommandText, behavior, command.NamedParameters),
                 HasParameters = command.HasSendableParameters
             };
         }
@@ -503,23 +680,34 @@ namespace AdoNetCore.AseClient.Internal
             };
         }
 
-        private string MakeCommand(string commandText, CommandBehavior behavior)
+        private string MakeCommand(string commandText, CommandBehavior behavior, bool namedParameters = true)
         {
             var result = commandText;
 
+            if (!namedParameters)
+            {
+                try
+                {
+                    result = result.ToNamedParameters();
+                }
+                catch (ArgumentException)
+                {
+                    throw new AseException("Incorrect syntax. Possible mismatched quotes on string literal, or identifier delimiter.");
+                }
+            }
+
             if ((behavior & CommandBehavior.SchemaOnly) == CommandBehavior.SchemaOnly)
             {
-                result = 
+                result =
 $@"SET FMTONLY ON
-{commandText}
+{result}
 SET FMTONLY OFF";
             }
 
             return result;
         }
 
-        // TODO - if namedParameters is false, then look for ? characters in the command, and bind the parameters by position.
-        private IToken[] BuildParameterTokens(AseParameterCollection parameters, bool namedParameters)
+        private IToken[] BuildParameterTokens(AseParameterCollection parameters)
         {
             var formatItems = new List<FormatItem>();
             var parameterItems = new List<ParametersToken.Parameter>();
@@ -561,18 +749,10 @@ SET FMTONLY OFF";
             }
 
             IsDisposed = true;
-            _socket.Dispose();
+            _networkStream.Dispose();
         }
 
         public static readonly IDictionary EmptyStatistics = new ReadOnlyDictionary<string, long>(new Dictionary<string, long>());
-
-        public bool IsCaseSensitive()
-        {
-            // todo: implement
-            // this should be derived from result of "select value from master.dbo.sysconfigures where name like 'default sortorder id'"
-            // return true if the result is not one of 39, 42, 44, 46, 48, 52, 53, 54, 56, 57, 59, 64, 70, 71, 73, 74
-            return false;
-        }
 
         public bool StatisticsEnabled
         {

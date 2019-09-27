@@ -92,52 +92,50 @@ namespace AdoNetCore.AseClient.Internal
             return format;
         }
 
-        public static FormatItem ReadForRow(Stream stream, Encoding enc, TokenType srcTokenType, ref bool streamExceeded)
+        public static FormatItem ReadForRow(Stream stream, Encoding enc, TokenType srcTokenType)
         {
             var format = new FormatItem
             {
-                ColumnLabel = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded),
-                CatalogName = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded),
-                SchemaName = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded),
-                TableName = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded),
-                ColumnName = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded),
+                ColumnLabel = stream.ReadByteLengthPrefixedString(enc),
+                CatalogName = stream.ReadByteLengthPrefixedString(enc),
+                SchemaName = stream.ReadByteLengthPrefixedString(enc),
+                TableName = stream.ReadByteLengthPrefixedString(enc),
+                ColumnName = stream.ReadByteLengthPrefixedString(enc),
                 RowStatus = (RowFormatItemStatus)(srcTokenType == TokenType.TDS_ROWFMT
-                    ? (uint)stream.ReadByte(ref streamExceeded)
-                    : stream.ReadUInt(ref streamExceeded))
+                    ? (uint)stream.ReadByte()
+                    : stream.ReadUInt())
             };
 
-            ReadTypeInfo(format, stream, enc, ref streamExceeded);
+            ReadTypeInfo(format, stream, enc);
 
             Logger.Instance?.WriteLine($"  <- {format.ColumnName}: {format.DataType} (len: {format.Length}) (ut:{format.UserType}) (status:{format.RowStatus}) (loc:{format.LocaleInfo}) format names available: ColumnLabel [{format.ColumnLabel}], ColumnName [{format.ColumnName}], CatalogName [{format.CatalogName}], ParameterName [{format.ParameterName}], SchemaName [{format.SchemaName}], TableName [{format.TableName}]");
 
             return format;
         }
 
-        public static FormatItem ReadForParameter(Stream stream, Encoding enc, TokenType srcTokenType, ref bool streamExceeded)
+        public static FormatItem ReadForParameter(Stream stream, Encoding enc, TokenType srcTokenType)
         {
             var format = new FormatItem
             {
-                ParameterName = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded),
+                ParameterName = stream.ReadByteLengthPrefixedString(enc),
             };
             var status = (ParameterFormatItemStatus)(srcTokenType == TokenType.TDS_PARAMFMT
-                ? (uint)stream.ReadByte(ref streamExceeded)
-                : stream.ReadUInt(ref streamExceeded));
+                ? (uint)stream.ReadByte()
+                : stream.ReadUInt());
             format.IsOutput = status.HasFlag(ParameterFormatItemStatus.TDS_PARAM_RETURN);
             format.IsNullable = status.HasFlag(ParameterFormatItemStatus.TDS_PARAM_NULLALLOWED);
 
-            ReadTypeInfo(format, stream, enc, ref streamExceeded);
+            ReadTypeInfo(format, stream, enc);
 
             Logger.Instance?.WriteLine($"  <- {format.ParameterName}: {format.DataType} (len: {format.Length}) (ut:{format.UserType})");
 
             return format;
         }
 
-        private static void ReadTypeInfo(FormatItem format, Stream stream, Encoding enc, ref bool streamExceeded)
+        private static void ReadTypeInfo(FormatItem format, Stream stream, Encoding enc)
         {
-            format.UserType = stream.ReadInt(ref streamExceeded);
-            format.DataType = (TdsDataType)stream.ReadByte(ref streamExceeded);
-            if (streamExceeded)
-                return;
+            format.UserType = stream.ReadInt();
+            format.DataType = (TdsDataType)stream.ReadByte();
 
             switch (format.DataType)
             {
@@ -171,39 +169,39 @@ namespace AdoNetCore.AseClient.Internal
                 case TdsDataType.TDS_DATEN:
                 case TdsDataType.TDS_TIMEN:
                 case TdsDataType.TDS_MONEYN:
-                    format.Length = stream.ReadByte(ref streamExceeded);
+                    format.Length = stream.ReadByte();
                     break;
                 case TdsDataType.TDS_LONGCHAR:
                 case TdsDataType.TDS_LONGBINARY:
-                    format.Length = stream.ReadInt(ref streamExceeded);
+                    format.Length = stream.ReadInt();
                     break;
                 case TdsDataType.TDS_DECN:
                 case TdsDataType.TDS_NUMN:
-                    format.Length = stream.ReadByte(ref streamExceeded);
-                    format.Precision = (byte)stream.ReadByte(ref streamExceeded);
-                    format.Scale = (byte)stream.ReadByte(ref streamExceeded);
+                    format.Length = stream.ReadByte();
+                    format.Precision = (byte)stream.ReadByte();
+                    format.Scale = (byte)stream.ReadByte();
                     break;
                 case TdsDataType.TDS_TEXT:
                 case TdsDataType.TDS_XML:
                 case TdsDataType.TDS_IMAGE:
                 case TdsDataType.TDS_UNITEXT:
                     {
-                        format.Length = stream.ReadInt(ref streamExceeded);
+                        format.Length = stream.ReadInt();
                         /*var name =*/
-                        stream.ReadShortLengthPrefixedString(enc, ref streamExceeded);
+                        stream.ReadShortLengthPrefixedString(enc);
                         break;
                     }
                 case TdsDataType.TDS_BIGDATETIMEN:
-                    format.Length = stream.ReadByte(ref streamExceeded);
+                    format.Length = stream.ReadByte();
                     // don't know what this represents, but when sending/receiving a big datetime we need to send/receive a byte
                     // maybe it represents the resolution to which the number represents (e.g. 6 = microseconds, 3 = milliseconds?)
-                    stream.ReadByte(ref streamExceeded);
+                    stream.ReadByte();
                     break;
                 default:
                     throw new NotSupportedException($"Unsupported data type {format.DataType} (column: {format.DisplayColumnName})");
             }
 
-            format.LocaleInfo = stream.ReadByteLengthPrefixedString(enc, ref streamExceeded);
+            format.LocaleInfo = stream.ReadByteLengthPrefixedString(enc);
             //ClassId stuff?
         }
 

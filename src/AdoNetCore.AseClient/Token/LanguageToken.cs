@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
 using AdoNetCore.AseClient.Internal;
@@ -22,14 +22,12 @@ namespace AdoNetCore.AseClient.Token
             stream.Write(commandText, 0, commandText.Length);
         }
 
-        public void Read(Stream stream, DbEnvironment env, IFormatToken previous, ref bool streamExceeded)
+        public void Read(Stream stream, DbEnvironment env, IFormatToken previous)
         {
-            var remainingLength = stream.ReadInt(ref streamExceeded);
-            if (stream.CheckRequiredLength(remainingLength, ref streamExceeded) == false)
-                return;
+            var remainingLength = stream.ReadInt();
             var status = stream.ReadByte();
             HasParameters = (status & 1) > 0;
-            CommandText = stream.ReadString(remainingLength - 1, env.Encoding, ref streamExceeded);
+            CommandText = stream.ReadString(remainingLength - 1, env.Encoding);
         }
     }
 }

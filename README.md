@@ -1,4 +1,6 @@
-# AdoNetCore.AseClient - a .NET Core DB Provider for SAP ASE
+# ![icon](icon.png "icon") AdoNetCore.AseClient
+
+A .NET Core DB Provider for SAP ASE
 
 [![CodeFactor](https://www.codefactor.io/repository/github/dataaction/adonetcore.aseclient/badge)](https://www.codefactor.io/repository/github/dataaction/adonetcore.aseclient)
 [![Join the chat at https://gitter.im/DataAction/AdoNetCore.AseClient](https://badges.gitter.im/DataAction/AdoNetCore.AseClient.svg)](https://gitter.im/DataAction/AdoNetCore.AseClient?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
@@ -45,7 +47,7 @@ The latest stable release of the AdoNetCore.AseClient is [available on NuGet](ht
     * AseErrorCollection
     * AseException
     * AseInfoMessageEventArgs
-    * AseInfoMessageEventHandler 
+    * AseInfoMessageEventHandler
     * AseParameter
     * AseParameterCollection
     * AseRowUpdatedEventArgs - .NET Core 2.0+
@@ -54,24 +56,10 @@ The latest stable release of the AdoNetCore.AseClient is [available on NuGet](ht
     * AseRowUpdatingEventHandler - .NET Core 2.0+
     * TraceEnterEventHandler
     * TraceExitEventHandler
-* The following features are not *yet* supported:
-    * `Bulk Copy` - no reason this can't be supported, just hasn't been a priority thus far. As such the following types have not yet been implemented:
-        * [AseBulkCopy](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409524288.html)
-        * [AseBulkCopyColumnMapping](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409528570.html)
-        * [AseBulkCopyColumnMappingCollection](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409530992.html)
-        * [AseBulkCopyOptions](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409533851.html)
-        * [AseRowsCopiedEventArgs](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409610666.html)
-        * [AseRowsCopiedEventHandler](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409612103.html)
-    * `Failover` - no reason this can't be supported, just hasn't been a priority thus far. As such the following types have not yet been implemented:
-        * [AseFailoverException](http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409597900.html)
-* The following features are not supported:
-    * `Code Access Security` - CAS is [no longer recommended by Microsoft](https://docs.microsoft.com/en-us/dotnet/framework/misc/code-access-security) and [will not be supported in .NET Core](https://github.com/dotnet/corefx/blob/master/Documentation/project-docs/porting.md#code-access-security-cas). For binary compatibility the following stubs have been added in .NET Core 2.0+ but they do nothing:
-        * AseClientPermission
-        * AseClientPermissionAttribute
-    * `ASE Functions` - The SAP `Sybase.Data.AseClient` provides an `AseFunctions` type filled with utility functions that aren't implemented. This type will not be supported as it doesn't do anything. Consumers should remove references to this type.
 
+* Not all features are currently supported, and some features will not be supported. Refer to [Unsupported features](https://github.com/DataAction/AdoNetCore.AseClient/wiki/Unsupported-features).
 * Performance equivalent to or better than that of `Sybase.Data.AseClient` provided by SAP. This is possible as we are eliminating the COM and OLE DB layers from this driver and .NET Core is fast.
-* Target all versions of .NET Core (1.0, 1.1, 2.0, and 2.1)
+* Target all versions of .NET Core (1.0, 1.1, 2.0, 2.1 and 2.2)
 * Should work with [Dapper](https://github.com/StackExchange/Dapper) at least as well as the `Sybase.Data.AseClient`
 
 ## Performance benchmarks
@@ -107,7 +95,7 @@ Open a connection (pooled) and invoke AseCommand.ExecuteReader(...) once, readin
 
 We perform these tests for .NET Core 1.1, .NET Core 2.0, and .NET Standard 4.6 using the `AdoNetCore.AseClient`. For comparison, we also perform these tests on .NET Standard 4.6 using the `Sybase.Data.AseClient` from SAP.
 
-### Environment 
+### Environment
 The goal of the benchmarking is not to establish the absolute performance of the driver or the ASE Server, but to show its equivalence as a substitute. As such, the test client and database server have been held constant in all tests.
 
 #### Server:
@@ -131,45 +119,35 @@ In all of the test cases the `AdoNetCore.AseClient` performed better or equivale
 
 | Property                                                                                   | Support   | Notes
 | ------------------------------------------------------------------------------------------ |:---------:| -----
-| `AlternateServers`                                                                         | TODO | Refer to issue [#64](https://github.com/DataAction/AdoNetCore.AseClient/issues/64)
-| `AnsiNull`                                                                                 | TODO | Submit a PR!
+| `AnsiNull`                                                                                 | &#10003; | By default (0) AnsiNull is disabled which means that SQL statements can use `= NULL` and `IS NULL` syntax. Set to 1 to instruct the connection to only permit `IS NULL` syntax.
 | `ApplicationName` or `Application Name`                                                    | &#10003;
-| `BufferCacheSize`                                                                          | TODO
+| `BufferCacheSize`                                                                          | &#10003; | Buffer caching is automatically managed via an internal [ArrayPool<T>](https://docs.microsoft.com/en-us/dotnet/api/system.buffers.arraypool-1.create?view=netstandard-2.1). Setting this value in the connection string does nothing, but the behaviour is supported.
 | `Charset`                                                                                  | &#10003; | If not specified, the server should dictate the character set
 | `ClientHostName`                                                                           | &#10003;
 | `ClientHostProc`                                                                           | &#10003;
-| `CodePageType`                                                                             | TODO
+| `CodePageType`                                                                             | &#10005; | This doesn't appear to be relevant any more. You can specify the `Charset` without reference to a code page type, or allow the server to set the `Charset` which is the default behaviour.
 | `Connection Lifetime` or `ConnectionLifetime`                                              | &#10003;
 | `ConnectionIdleTimeout` or `Connection IdleTimeout` or `Connection Idle Timeout`           | &#10003;
 | `CumulativeRecordCount`                                                                    | TODO
 | `Database` or `Db` or `Initial Catalog`                                                    | &#10003;
 | `Data Source` or `DataSource` or `Address` or `Addr` or `Network Address` or `Server Name` | &#10003;
-| `DistributedTransactionProtocol`                                                           | X
 | `DSURL` or `Directory Service URL`                                                         | &#10003; | Multiple URLs are not supported; network drivers other than NLWNSCK (TCP/IP socket) are not supported; LDAP is not supported
-| `EnableBulkLoad`                                                                           | X
-| `EnableServerPacketSize`                                                                   | TODO | May not be supported any more by capability bits
-| `Encryption`                                                                               | X
-| `EncryptPassword`                                                                          | TODO | Submit a PR! Refer to issue [#27](https://github.com/DataAction/AdoNetCore.AseClient/issues/27)
-| `Enlist`                                                                                   | X
-| `FetchArraySize`                                                                           | TODO
-| `HASession`                                                                                | TODO | Refer to issue [#64](https://github.com/DataAction/AdoNetCore.AseClient/issues/64)
+| `EnableServerPacketSize`                                                                   | &#10003;
+| `Encryption`                                                                               | &#10003; | The designated encryption. Possible values: ssl, none.
+| `EncryptPassword`                                                                          | &#10003; | Values 0 (disabled) and 1 (enabled) are supported. The highest encryption standard of the ASE 15.x and 16x servers is implemented.
 | `LoginTimeOut` or `Connect Timeout` or `Connection Timeout`                                | &#10003; | For pooled connections this translates to the time it takes to reserve a connection from the pool
 | `Max Pool Size`                                                                            | &#10003;
 | `Min Pool Size`                                                                            | &#10003; | <ul><li>The pool will attempt to prime itself on creation up to this size (in a thread)</li><li>When a connection is killed, the pool will attempt to replace it if the pool size is less than Min</li></ul>
+| `NamedParameters`                                                                          | &#10003;
 | `PacketSize` or `Packet Size`                        |                                      &#10003; | The server can decide to change this value
 | `Ping Server`                                                                              | &#10003;
 | `Pooling`                                                                                  | &#10003;
 | `Port` or `Server Port`                                                                    | &#10003;
 | `Pwd` or `Password`                                                                        | &#10003;
-| `RestrictMaximum PacketSize`                                                               | TODO | May not be supported any more by capability bits
-| `Secondary Data Source`                                                                    | TODO | Refer to issue [#64](https://github.com/DataAction/AdoNetCore.AseClient/issues/64)
-| `Secondary Server Port`                                                                    | TODO | Refer to issue [#64](https://github.com/DataAction/AdoNetCore.AseClient/issues/64)
 | `TextSize`                                                                                 | &#10003;
-| `TightlyCoupledTransaction`                                                                | X
-| `TrustedFile`                                                                              | X
+| `TrustedFile`                                                                              | &#10003; | This property must be used along with `Encryption=ssl`. The value must be set to the path to the trusted file.
 | `Uid` or `UserID` or `User ID` or `User`                                                   | &#10003;
 | `UseAseDecimal`                                                                            | &#10003;
-| `UseCursor`                                                                                | X
 
 ## Supported types
 ### Types supported when sending requests to the database

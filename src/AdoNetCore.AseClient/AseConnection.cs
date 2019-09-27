@@ -24,6 +24,7 @@ namespace AdoNetCore.AseClient
         private bool _isDisposed;
         private AseTransaction _transaction;
         private readonly IEventNotifier _eventNotifier;
+        private bool? _namedParameters;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AseConnection" /> class.
@@ -113,7 +114,6 @@ namespace AdoNetCore.AseClient
             ConnectionString = connectionString;
             InternalConnectionTimeout = 15; // Default to 15s as per the SAP AseClient http://infocenter.sybase.com/help/topic/com.sybase.infocenter.dc20066.1570100/doc/html/san1364409555258.html
             _connectionPoolManager = connectionPoolManager;
-            NamedParameters = true;
             _isDisposed = false;
             _eventNotifier = new EventNotifier(this);
         }
@@ -235,7 +235,7 @@ namespace AdoNetCore.AseClient
             }
 
             _eventNotifier?.ClearResultHandlers();
-            var aseCommand = new AseCommand(this) { NamedParameters = NamedParameters, EventNotifier = _eventNotifier };
+            var aseCommand = new AseCommand(this) { EventNotifier = _eventNotifier };
 
             return aseCommand;
         }
@@ -515,10 +515,22 @@ namespace AdoNetCore.AseClient
         /// <remarks>
         /// This can be either set by the ConnectionString (NamedParameters='true'/'false') or the user can set it directly through an instance of AseConnection.
         /// </remarks>
-        public bool NamedParameters // TODO - implement
+        public bool NamedParameters
         {
-            get;
-            set;
+            get
+            {
+                if(_namedParameters.HasValue)
+                {
+                    return _namedParameters.Value;
+                }
+                if(_internal != null)
+                {
+                    return _internal.NamedParameters;
+                }
+
+                return true;
+            }
+            set => _namedParameters = value;
         }
 
 #if ENABLE_CLONEABLE_INTERFACE
@@ -540,7 +552,37 @@ namespace AdoNetCore.AseClient
 
         public bool IsCaseSensitive()
         {
-            return _internal?.IsCaseSensitive() ?? false;
+            int result;
+            using (var command = CreateCommand())
+            {
+                command.CommandType = CommandType.Text;
+                command.CommandText = "SELECT value FROM master.dbo.sysconfigures WHERE name = 'default sortorder id'";
+
+                result = (int)command.ExecuteScalar();
+            }
+
+            switch (result)
+            {
+                case 39:
+                case 42:
+                case 44:
+                case 46:
+                case 48:
+                case 52:
+                case 53:
+                case 54:
+                case 56:
+                case 57:
+                case 59:
+                case 64:
+                case 70:
+                case 71:
+                case 73:
+                case 74:
+                    return false;
+                default:
+                    return true;
+            }
         }
 
         public IDictionary RetrieveStatistics()

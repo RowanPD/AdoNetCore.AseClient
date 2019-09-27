@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Internal;
 
@@ -8,6 +8,6 @@ namespace AdoNetCore.AseClient.Interface
     {
         TokenType Type { get; }
         void Write(Stream stream, DbEnvironment env);
-        void Read(Stream stream, DbEnvironment env, IFormatToken previousFormatToken, ref bool streamExceeded);
+        void Read(Stream stream, DbEnvironment env, IFormatToken previousFormatToken);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Data;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;
@@ -20,10 +20,10 @@ namespace AdoNetCore.AseClient.Internal.Handler
         private readonly AseDataReader _reader;
         private int _numResults;
 
-        public DataReaderCallbackTokenHandler(AseCommand command, CommandBehavior behavior, IResultsMessageEventNotifier eventNotifier)
+        public DataReaderCallbackTokenHandler(CommandBehavior behavior, IResultsMessageEventNotifier eventNotifier)
         {
             _eventNotifier = eventNotifier;
-            _reader = new AseDataReader(_results, command, behavior);
+            _reader = new AseDataReader(_results, behavior);
             // Set up dummy result set in Reader so that processing in Handle is simpler
             _results.Add(new TableResult());
             _results[0].Rows.Add(null);

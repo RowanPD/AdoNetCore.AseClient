@@ -93,6 +93,24 @@ namespace AdoNetCore.AseClient.Interface
         void SetTextSize(int textSize);
 
         /// <summary>
+        /// Set ANSI NULL behaviour for the connection.
+        /// </summary>
+        /// <param name="enabled">When true, the ANSI NULL behaviour will be enabled.</param>
+        void SetAnsiNull(bool enabled);
+
+        /// <summary>
+        /// Governs the default behavior of the AseCommand objects associated with this connection.
+        /// </summary>
+        /// <remarks>
+        /// This can be either set by the ConnectionString (NamedParameters='true'/'false') or the user can set it directly through an instance of AseConnection.
+        /// </remarks>
+        bool NamedParameters
+        {
+            get;
+            set;
+        }
+
+        /// <summary>
         /// Indicates if this connection is doomed to destruction
         /// </summary>
         bool IsDoomed { get; set; }
@@ -101,11 +119,6 @@ namespace AdoNetCore.AseClient.Interface
         /// Indicates if this connection has already been disposed
         /// </summary>
         bool IsDisposed { get; }
-
-        /// <summary>
-        /// Indicates if this connection is case sensitive
-        /// </summary>
-        bool IsCaseSensitive();
 
         /// <summary>
         /// Indicates if statistics for this connection are enabled;
