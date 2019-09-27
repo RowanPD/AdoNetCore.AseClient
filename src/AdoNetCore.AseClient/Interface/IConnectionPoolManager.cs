@@ -1,4 +1,4 @@
-﻿namespace AdoNetCore.AseClient.Interface
+namespace AdoNetCore.AseClient.Interface
 {
     internal interface IConnectionPoolManager
     {

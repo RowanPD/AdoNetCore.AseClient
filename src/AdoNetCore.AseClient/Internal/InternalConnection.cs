@@ -160,40 +160,36 @@ namespace AdoNetCore.AseClient.Internal
             }
         }
 
-//        private void ReceivePartialTokens(params ITokenHandler[] handlers)
-//        {
-//            Logger.Instance?.WriteLine();
-//            Logger.Instance?.WriteLine("---------- Receive Partial Tokens ----------");
-//            try
-//            {
-//#if ENABLE_ARRAY_POOL
-//                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment, _arrayPool))
-//#else
-//                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment))
-//#endif
-//                {
-//                    IEnumerable<IToken> tokens;
-//                    while ((tokens = _reader.ReadPartialTokens(tokenStream, _environment)) !=
-//                           null)
-//                    {
-//                        foreach (var receivedToken in tokens)
-//                        {
-//                            foreach (var handler in handlers)
-//                            {
-//                                if (handler != null && handler.CanHandle(receivedToken.Type))
-//                                {
-//                                    handler.Handle(receivedToken);
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//            finally
-//            {
-//                LastActive = DateTime.UtcNow;
-//            }
-//        }
+        private void ReceivePartialTokens(params ITokenHandler[] handlers)
+        {
+            Logger.Instance?.WriteLine();
+            Logger.Instance?.WriteLine("---------- Receive Partial Tokens ----------");
+            try
+            {
+#if ENABLE_ARRAY_POOL
+                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment, _arrayPool))
+#else
+                using (var tokenStream = new TokenReceiveStream(_networkStream, _environment))
+#endif
+                {
+                    IToken receivedToken;
+                    while((receivedToken = _reader.ReadOne(tokenStream, _environment)) != null)
+                    {
+                        foreach (var handler in handlers)
+                        {
+                            if (handler != null && handler.CanHandle(receivedToken.Type))
+                            {
+                                handler.Handle(receivedToken);
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                LastActive = DateTime.UtcNow;
+            }
+        }
 
         public void Login()
         {
@@ -361,15 +357,13 @@ namespace AdoNetCore.AseClient.Internal
                 var envChangeTokenHandler = new EnvChangeTokenHandler(_environment, _parameters.Charset);
                 var doneHandler = new DoneTokenHandler();
                 var messageHandler = new MessageTokenHandler(EventNotifier);
-                //var dataReaderHandler = new DataReaderTokenHandler();
+                // Only one of these two data readers will not be null
+                var dataReaderHandler = readerSourceType == ReaderSourceType.Standard ? new DataReaderTokenHandler() : null;
+                var dataReaderEventHandler = readerSourceType == ReaderSourceType.ForCallback ? new DataReaderCallbackTokenHandler(behavior, EventNotifier) : null;
                 var responseParameterTokenHandler = new ResponseParameterTokenHandler(command.AseParameters);
 
-                // Only one of these two variables will not be null
-                var dataReaderHandler = readerSource != null && readerSourceType == ReaderSourceType.Standard ? new DataReaderTokenHandler() : null;
-                var dataReaderEventHandler = readerSource != null && readerSourceType == ReaderSourceType.ForCallback ? new DataReaderCallbackTokenHandler(CommandBehavior.Default, EventNotifier) : null;
-
-                if (dataReaderEventHandler != null)
-                    ReceiveTokens(
+                if (readerSourceType == ReaderSourceType.ForCallback)
+                    ReceivePartialTokens(
                         envChangeTokenHandler,
                         doneHandler,
                         messageHandler,
@@ -394,19 +388,19 @@ namespace AdoNetCore.AseClient.Internal
 
                 if (doneHandler.Canceled)
                 {
-                    readerSource?.TrySetCanceled(); // If we have already begun returning data, then this will get lost.
+                    readerSource.TrySetCanceled(); // If we have already begun returning data, then this will get lost.
                 }
                 else
                 {
                     if (dataReaderHandler != null)
 #if ENABLE_SYSTEM_DATA_COMMON_EXTENSIONS
-                        readerSource?.TrySetResult(new AseDataReader(dataReaderHandler.Results(), command, behavior));
+                        readerSource.TrySetResult(new AseDataReader(dataReaderHandler.Results(), command, behavior));
 #else
-                        readerSource?.TrySetResult(new AseDataReader(dataReaderHandler.Results(), behavior));
+                        readerSource.TrySetResult(new AseDataReader(dataReaderHandler.Results(), behavior));
 #endif
                     else if (dataReaderEventHandler != null)
                         // Set this so that Task.Wait will stop waiting
-                        readerSource?.SetResult(null);
+                        readerSource.SetResult(null);
                 }
             }
             catch (Exception ex)
@@ -508,11 +502,6 @@ namespace AdoNetCore.AseClient.Internal
             catch (AggregateException ae)
             {
                 ExceptionDispatchInfo.Capture(ae.InnerException ?? ae).Throw();
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // TODO: Debug catch-all :-) to be removed.
                 throw;
             }
             finally

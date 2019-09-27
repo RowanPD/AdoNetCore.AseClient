@@ -14,8 +14,7 @@ namespace AdoNetCore.AseClient.Internal
             return ReadInternal(stream, format, env) ?? DBNull.Value;
         }
 
-        private delegate object ReadMapMethodDelegate(Stream stream, FormatItem format, DbEnvironment env);
-        private static readonly Dictionary<TdsDataType, ReadMapMethodDelegate> ReadMap = new Dictionary<TdsDataType, ReadMapMethodDelegate>
+        private static readonly Dictionary<TdsDataType, Func<Stream, FormatItem, DbEnvironment, object>> ReadMap = new Dictionary<TdsDataType, Func<Stream, FormatItem, DbEnvironment, object>>
         {
             {TdsDataType.TDS_BIT, ReadTDS_BIT},
             {TdsDataType.TDS_INT1, ReadTDS_INT1},
@@ -111,8 +110,7 @@ namespace AdoNetCore.AseClient.Internal
             switch (stream.ReadByte())
             {
                 case 0: return DBNull.Value;
-                case 1:
-                    return (byte)stream.ReadByte(); //both INTN(1) and UINTN(1) are an INT1. Never an SINT1.
+                case 1: return (byte)stream.ReadByte(); //both INTN(1) and UINTN(1) are an INT1. Never an SINT1.
                 case 2: return stream.ReadShort();
                 case 4: return stream.ReadInt();
                 case 8: return stream.ReadLong();

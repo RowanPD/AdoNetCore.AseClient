@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Data;
 using AdoNetCore.AseClient.Enum;
 using AdoNetCore.AseClient.Interface;

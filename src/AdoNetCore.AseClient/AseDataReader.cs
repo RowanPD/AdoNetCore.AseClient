@@ -11,6 +11,8 @@ namespace AdoNetCore.AseClient
 {
     public sealed class AseDataReader : DbDataReader, IAseDataCallbackReader
     {
+        //private static readonly HashSet<TdsDataType> LongTdsTypes = new HashSet<TdsDataType> {TdsDataType.TDS_BLOB, TdsDataType.TDS_IMAGE, TdsDataType.TDS_LONGBINARY, TdsDataType.TDS_LONGCHAR, TdsDataType.TDS_TEXT, TdsDataType.TDS_UNITEXT};
+
         private readonly IList<TableResult> _results;
         private int _currentResult = -1;
         private int _currentRow = -1;
@@ -33,6 +35,14 @@ namespace AdoNetCore.AseClient
         internal AseDataReader(IEnumerable<TableResult> results, CommandBehavior behavior)
         {
             _results = results.ToArray();
+
+            _behavior = behavior;
+            NextResult();
+        }
+
+        internal AseDataReader(IList<TableResult> results, CommandBehavior behavior)
+        {
+            _results = results;
 
             _behavior = behavior;
             NextResult();
@@ -101,6 +111,11 @@ namespace AdoNetCore.AseClient
                 }
 
                 byteArray = Encoding.Unicode.GetBytes((string)obj);
+
+                if (byteArray == null)
+                {
+                    return 0;
+                }
                 byteArrayLength = byteArray.Length;
             }
 
@@ -534,7 +549,7 @@ namespace AdoNetCore.AseClient
         private object GetNonNullValue(int i)
         {
             var obj = GetValue(i);
-
+            
             if (obj == DBNull.Value || obj == null)
             {
                 throw new AseException("Value in column is null", 30014);

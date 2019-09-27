@@ -11,7 +11,6 @@ namespace AdoNetCore.AseClient.Internal
 #if ENABLE_ARRAY_POOL
         private static readonly System.Buffers.ArrayPool<byte> BufferPool = System.Buffers.ArrayPool<byte>.Shared;
 #endif
-
         private static readonly ConcurrentDictionary<string, IConnectionPool> Pools = new ConcurrentDictionary<string, IConnectionPool>(StringComparer.OrdinalIgnoreCase);
 
         public IInternalConnection Reserve(string connectionString, IConnectionParameters parameters, IEventNotifier eventNotifier)
@@ -23,7 +22,6 @@ namespace AdoNetCore.AseClient.Internal
 #else
                 var internalConnectionFactory = new InternalConnectionFactory(parameters);
 #endif
-
                 return new ConnectionPool(parameters, internalConnectionFactory);
             }).Reserve(eventNotifier);
         }
@@ -44,9 +42,7 @@ namespace AdoNetCore.AseClient.Internal
 
         public void ClearPool(string connectionString)
         {
-            //todo: implement
         }
-
         public void ClearPools()
         {
             //todo: implement

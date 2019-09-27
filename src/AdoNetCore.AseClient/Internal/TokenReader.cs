@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using AdoNetCore.AseClient.Enum;
@@ -9,10 +10,9 @@ namespace AdoNetCore.AseClient.Internal
     internal class TokenReader : ITokenReader
     {
         private IFormatToken _previousFormatToken;
-        
+
         public IEnumerable<IToken> Read(TokenReceiveStream stream, DbEnvironment env)
         {
-            var tokens = new List<IToken>();
             while (stream.DataAvailable)
             {
                 var rawTokenType = (byte) stream.ReadByte();
@@ -21,42 +21,81 @@ namespace AdoNetCore.AseClient.Internal
                 if (Readers.ContainsKey(tokenType))
                 {
                     var t = Readers[tokenType](stream, env, _previousFormatToken);
+
                     if (t is IFormatToken token)
                     {
-                        Logger.Instance?.WriteLine("**Set new format token**");
+                        Logger.Instance?.WriteLine($"**Set new format token**");
                         _previousFormatToken = token;
                     }
 
-                    tokens.Add(t);
+                    yield return t;
                 }
                 else
                 {
                     Logger.Instance?.WriteLine($"!!! Hit unknown token type {tokenType} !!!");
                     var t = new CatchAllToken(rawTokenType);
                     t.Read(stream, env, _previousFormatToken);
-                    tokens.Add(t);
+                    yield return t;
                 }
 
                 if (stream.IsCancelled)
                 {
                     Logger.Instance?.WriteLine($"{nameof(TokenReceiveStream)} - received cancel status flag");
 
-                    tokens.Add( 
+                    yield return 
                         new DoneToken
                         {
                             Count = 0,
                             Status = DoneToken.DoneStatus.TDS_DONE_ATTN
-                        });
+                        };
                 }
-
-                if (tokenType == TokenType.TDS_DONE)
-                    _previousFormatToken = null;
             }
-            return tokens;
+            _previousFormatToken = null;
         }
 
-        private delegate IToken ReadersMethodDelegate(Stream stream, DbEnvironment env, IFormatToken previous);
-        private static readonly Dictionary<TokenType, ReadersMethodDelegate> Readers = new Dictionary<TokenType, ReadersMethodDelegate>
+        public IToken ReadOne(TokenReceiveStream stream, DbEnvironment env)
+        {
+            if (stream.DataAvailable)
+            {
+                var rawTokenType = (byte)stream.ReadByte();
+                var tokenType = (TokenType)rawTokenType;
+                IToken t;
+
+                if (Readers.ContainsKey(tokenType))
+                {
+                    t = Readers[tokenType](stream, env, _previousFormatToken);
+
+                    if (t is IFormatToken token)
+                    {
+                        Logger.Instance?.WriteLine($"**Set new format token**");
+                        _previousFormatToken = token;
+                    }
+                }
+                else
+                {
+                    Logger.Instance?.WriteLine($"!!! Hit unknown token type {tokenType} !!!");
+                    t = new CatchAllToken(rawTokenType);
+                    t.Read(stream, env, _previousFormatToken);
+                }
+
+                if (stream.IsCancelled)
+                {
+                    Logger.Instance?.WriteLine($"{nameof(TokenReceiveStream)} - received cancel status flag");
+
+                    return
+                        new DoneToken
+                        {
+                            Count = 0,
+                            Status = DoneToken.DoneStatus.TDS_DONE_ATTN
+                        };
+                }
+                return t;
+            }
+            _previousFormatToken = null;
+            return null;
+        }
+
+        private static readonly Dictionary<TokenType, Func<Stream, DbEnvironment, IFormatToken, IToken>> Readers = new Dictionary<TokenType, Func<Stream, DbEnvironment, IFormatToken, IToken>>
         {
             {TokenType.TDS_ENVCHANGE, EnvironmentChangeToken.Create},
             {TokenType.TDS_EED, EedToken.Create },
